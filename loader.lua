@@ -5,6 +5,30 @@
 -- GAME RESTRICTION
 -- Hentikan eksekusi sebelum memuat UI/plugin jika bukan game target.
 -- ==========================================
+local SUPPORTED_PLACE_ID = 111993336672818
+
+if game.PlaceId ~= SUPPORTED_PLACE_ID then
+    local StarterGui = game:GetService("StarterGui")
+    local message = "Kopdes Together hanya dapat digunakan di game Kopdes Together."
+
+    -- SetCore terkadang belum siap tepat saat script mulai dijalankan.
+    task.spawn(function()
+        for _ = 1, 5 do
+            local ok = pcall(function()
+                StarterGui:SetCore("SendNotification", {
+                    Title = "Unsupported Game",
+                    Text = message,
+                    Duration = 5,
+                })
+            end)
+            if ok then return end
+            task.wait(1)
+        end
+        warn("[Kopdes Together] Unsupported Game | PlaceId: " .. tostring(game.PlaceId))
+    end)
+
+    return
+end
 
 local WindUI = loadstring(game:HttpGet(
     "https://github.com/Footagesus/WindUI/releases/download/1.6.66/main.lua"
@@ -77,11 +101,13 @@ local KopdesAPI = {
     LocalPlayer = LocalPlayer,
     PlayerGui = PlayerGui,
     HttpService = HttpService,
-    Plot = workspace:WaitForChild("Plot1"),
+    -- Jangan gunakan WaitForChild tanpa timeout di tahap inisialisasi.
+    -- Referensi diisi bertahap agar UI tetap tampil meski objek game terlambat dibuat.
+    Plot = workspace:FindFirstChild("Plot1"),
     Remotes = {
-        Kardus = ReplicatedStorage:WaitForChild("KardusRemotes"),
-        Bank = ReplicatedStorage:WaitForChild("BankRemotes"),
-        Quest = ReplicatedStorage:WaitForChild("QuestRemotes"),
+        Kardus = ReplicatedStorage:FindFirstChild("KardusRemotes"),
+        Bank = ReplicatedStorage:FindFirstChild("BankRemotes"),
+        Quest = ReplicatedStorage:FindFirstChild("QuestRemotes"),
     },
     FormatRupiah = formatRupiah,
 }
@@ -239,6 +265,9 @@ end)
 -- TAB DASHBOARD
 -- ==========================================
 local HomeTab = KopdesAPI.CreateTab("Dashboard", "layout-dashboard")
+if HomeTab then
+    pcall(function() HomeTab:Select() end)
+end
 
 KopdesAPI.Section(HomeTab, "Live Status Koperasi")
 local StatusCard = KopdesAPI.Paragraph(
@@ -282,17 +311,52 @@ end
 
 local ringkasanPlugin = {}
 for _, info in ipairs(DaftarPlugin) do
-    local ok, status = muatPluginDariUrl(info.name, REPO_PLUGINS .. info.file)
-    LoadedPlugins[info.id] = { name = info.name, ok = ok, status = status }
-    table.insert(ringkasanPlugin, (ok and "● " or "○ ") .. info.name .. " — " .. status)
+    LoadedPlugins[info.id] = { name = info.name, ok = false, status = "Menunggu dependensi game..." }
+    table.insert(ringkasanPlugin, "… " .. info.name .. " — Menunggu")
 end
 
 KopdesAPI.Section(HomeTab, "Plugin Manager")
-KopdesAPI.Paragraph(
+local PluginStatusCard = KopdesAPI.Paragraph(
     HomeTab,
     "Modul Terpasang (" .. #DaftarPlugin .. " Plugin)",
-    table.concat(ringkasanPlugin, "\n")
+    table.concat(ringkasanPlugin, "\\n")
 )
+
+-- Memuat plugin di thread terpisah supaya satu WaitForChild/plugin yang lambat
+-- tidak menghentikan pembuatan UI utama.
+task.spawn(function()
+    local deadline = os.clock() + 20
+    repeat
+        KopdesAPI.Plot = workspace:FindFirstChild("Plot1")
+        KopdesAPI.Remotes.Kardus = ReplicatedStorage:FindFirstChild("KardusRemotes")
+        KopdesAPI.Remotes.Bank = ReplicatedStorage:FindFirstChild("BankRemotes")
+        KopdesAPI.Remotes.Quest = ReplicatedStorage:FindFirstChild("QuestRemotes")
+
+        if KopdesAPI.Plot and KopdesAPI.Remotes.Kardus
+            and KopdesAPI.Remotes.Bank and KopdesAPI.Remotes.Quest then
+            break
+        end
+        task.wait(0.5)
+    until os.clock() >= deadline
+
+    local hasil = {}
+    for _, info in ipairs(DaftarPlugin) do
+        local ok, status
+        if not (KopdesAPI.Plot and KopdesAPI.Remotes.Kardus
+            and KopdesAPI.Remotes.Bank and KopdesAPI.Remotes.Quest) then
+            ok, status = false, "Dependensi game tidak ditemukan (timeout)"
+        else
+            ok, status = muatPluginDariUrl(info.name, REPO_PLUGINS .. info.file)
+        end
+        LoadedPlugins[info.id] = { name = info.name, ok = ok, status = status }
+        table.insert(hasil, (ok and "● " or "○ ") .. info.name .. " — " .. status)
+    end
+    KopdesAPI.SetElementText(
+        PluginStatusCard,
+        "Modul Terpasang (" .. #DaftarPlugin .. " Plugin)",
+        table.concat(hasil, "\\n")
+    )
+end)
 
 local customPluginUrl = ""
 KopdesAPI.Input(HomeTab, "Load Custom Plugin via URL (.lua)", "https://raw.githubusercontent.com/...", function(value)
@@ -311,10 +375,16 @@ end)
 -- ==========================================
 -- LOOP LIVE DASHBOARD (UPDATE TIAP 4 DETIK)
 -- ==========================================
-local GetStateRemote = KopdesAPI.Remotes.Bank:WaitForChild("GetState")
-local clickObject = KopdesAPI.Plot:WaitForChild("ClickObject")
-
 task.spawn(function()
+    local GetStateRemote, clickObject
+    while not (GetStateRemote and clickObject) do
+        local bank = KopdesAPI.Remotes.Bank or ReplicatedStorage:FindFirstChild("BankRemotes")
+        local plot = KopdesAPI.Plot or workspace:FindFirstChild("Plot1")
+        if bank then GetStateRemote = bank:FindFirstChild("GetState") end
+        if plot then clickObject = plot:FindFirstChild("ClickObject") end
+        task.wait(0.5)
+    end
+
     while true do
         local saldoTokoText, saldoUserText = "-", "-"
         local okState, state = pcall(function()
