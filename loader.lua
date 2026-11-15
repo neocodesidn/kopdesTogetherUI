@@ -5,30 +5,6 @@
 -- GAME RESTRICTION
 -- Hentikan eksekusi sebelum memuat UI/plugin jika bukan game target.
 -- ==========================================
-local SUPPORTED_PLACE_ID = 111993336672818
-
-if game.PlaceId ~= SUPPORTED_PLACE_ID then
-    local StarterGui = game:GetService("StarterGui")
-    local message = "Kopdes Together hanya dapat digunakan di game Kopdes Together."
-
-    -- SetCore terkadang belum siap tepat saat script mulai dijalankan.
-    task.spawn(function()
-        for _ = 1, 5 do
-            local ok = pcall(function()
-                StarterGui:SetCore("SendNotification", {
-                    Title = "Unsupported Game",
-                    Text = message,
-                    Duration = 5,
-                })
-            end)
-            if ok then return end
-            task.wait(1)
-        end
-        warn("[Kopdes Together] Unsupported Game | PlaceId: " .. tostring(game.PlaceId))
-    end)
-
-    return
-end
 
 local WindUI = loadstring(game:HttpGet(
     "https://github.com/Footagesus/WindUI/releases/download/1.6.66/main.lua"
