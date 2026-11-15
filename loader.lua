@@ -5,7 +5,7 @@
 -- GAME RESTRICTION
 -- Hentikan eksekusi sebelum memuat UI/plugin jika bukan game target.
 -- ==========================================
-local SUPPORTED_PLACE_ID = 111993336672818
+local SUPPORTED_PLACE_ID = 102028200883125
 
 if game.PlaceId ~= SUPPORTED_PLACE_ID then
     local StarterGui = game:GetService("StarterGui")
